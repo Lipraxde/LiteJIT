@@ -34,6 +34,11 @@ set(CMAKE_MODULE_PATH
 
 add_compile_options(-Wall)
 
+option(CMAKE_IGNORE_ERR "Ignore error in LiteJIT" TRUE)
+if (${CMAKE_IGNORE_ERR})
+    add_definitions(-DIGNORE_ERR)
+endif()
+
 # Add include
 include_directories(include/)
 

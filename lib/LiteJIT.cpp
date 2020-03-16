@@ -18,10 +18,16 @@
 #include <unistd.h>
 #include <wchar.h>
 
-#ifdef NDEBUG
+#if defined(IGNORE_ERR)
 #define error_ret(val)                                                         \
   do {                                                                         \
     return val;                                                                \
+  } while (0)
+#else
+#if defined(NDEBUG)
+#define error_ret(val)                                                         \
+  do {                                                                         \
+    abort();                                                                   \
   } while (0)
 #else
 #define error_ret(val)                                                         \
@@ -29,6 +35,7 @@
     assert(false);                                                             \
     return val;                                                                \
   } while (0)
+#endif
 #endif
 
 #define ASSERT_WORD32(v)                                                       \
