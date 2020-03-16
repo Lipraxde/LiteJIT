@@ -139,6 +139,7 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, uint32_t _symtab, Elf_Rela *rel,
   case R_X86_64_32S:
   case R_X86_64_64:
   case R_X86_64_PC32:
+  case R_X86_64_PC64:
   case R_X86_64_PLT32:
   case R_X86_64_GOTPCREL:
   case R_X86_64_GOTPCRELX:
@@ -198,6 +199,11 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, uint32_t _symtab, Elf_Rela *rel,
     *(uint32_t *)base = tmp;
     return 0;
   }
+  case R_X86_64_PC64:
+    // Word64
+    // S + A - P
+    *(uint64_t *)base = symval + rel->r_addend - (uintptr_t)base;
+    return 0;
   case R_X86_64_PLT32: {
     // Word32
     // L + A - P
@@ -435,15 +441,15 @@ int LiteJIT::addC(const char *c) {
   } else {
     int status;
     int corpse;
-    int err;
+    int err = 0;
     if (c != nullptr) {
-      write(cfd[1], c, strlen(c));
+      (void)write(cfd[1], c, strlen(c));
       fsync(cfd[1]);
     } else {
       char input[256];
       ssize_t rsize;
       while ((rsize = read(STDIN_FILENO, input, 256)) != 0) {
-        write(cfd[1], input, rsize);
+        (void)write(cfd[1], input, rsize);
       }
       static bool once = false;
       if (once == true)
