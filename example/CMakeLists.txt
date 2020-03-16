@@ -1,0 +1,20 @@
+cmake_minimum_required (VERSION 3.10)
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    project(LiteJITExample LANGUAGES CXX)
+    set(CMAKE_CXX_STANDARD 17)
+    find_package(LiteJIT CONFIG REQUIRED)
+    if (${LiteJIT_FOUND})
+        message(STATUS "Found LiteJIT ${LITEJIT_VERSION}")
+	message(STATUS "Using LiteJITConfig.cmake in: ${LITEJIT_DIR}")
+	include_directories(${LITEJIT_INCLUDE_DIRS})
+    endif()
+endif()
+
+add_executable(demo demo.cpp)
+add_executable(demo2 demo2.cpp)
+
+target_link_libraries(demo LiteJIT)
+set_target_properties(demo PROPERTIES ENABLE_EXPORTS 1)
+target_link_libraries(demo2 LiteJIT)
+set_target_properties(demo2 PROPERTIES ENABLE_EXPORTS 1)

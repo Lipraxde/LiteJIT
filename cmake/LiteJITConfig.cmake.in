@@ -1,0 +1,20 @@
+set(LITEJIT_VERSION "@LITEJIT_VERSION@")
+
+# - Config file for the LiteJIT package
+# It defines the following variables
+#  LITEJIT_INCLUDE_DIRS - include directories for LiteJIT
+#  LITEJIT_LIBRARIES    - libraries to link against
+
+# Compute paths
+get_filename_component(LITEJIT_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+set(LITEJIT_INCLUDE_DIRS "@CONF_INCLUDE_DIRS@")
+set(LITEJIT_INSTALL_INCLUDE_DIR "@INSTALL_INCLUDE_DIR@")
+set(LITEJIT_INSTALL_LIB_DIR "@INSTALL_LIB_DIR@")
+
+# Our library dependencies (contains definitions for IMPORTED targets)
+if(NOT TARGET LiteJIT)
+    include("${LITEJIT_CMAKE_DIR}/LiteJITExports.cmake")
+endif()
+
+# These are IMPORTED targets created by LiteJITExports.cmake
+set(LITEJIT_LIBRARIES LiteJIT)
