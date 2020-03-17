@@ -41,16 +41,77 @@
 #define ASSERT_WORD32(v)                                                       \
   assert((int64_t)(v) < INT32_MAX && (int64_t)(v) > INT32_MIN);
 
+/* [llvm] RTDyldMemoryManager.cpp */
+// Determine whether we can register EH tables.
+#if (defined(__GNUC__) && !defined(__ARM_EABI__) && !defined(__ia64__) &&      \
+     !(defined(_AIX) && defined(__ibmxl__)) && !defined(__SEH__) &&            \
+     !defined(__USING_SJLJ_EXCEPTIONS__))
+#define HAVE_EHTABLE_SUPPORT 1
+#else
+#define HAVE_EHTABLE_SUPPORT 0
+#endif
+
+#if HAVE_EHTABLE_SUPPORT
+extern "C" void __register_frame(void *);
+extern "C" void __deregister_frame(void *);
+#else
+// The building compiler does not have __(de)register_frame but
+// it may be found at runtime in a dynamically-loaded library.
+// For example, this happens when building LLVM with Visual C++
+// but using the MingW runtime.
+static void __register_frame(void *p) {
+  static bool Searched = false;
+  static void((*rf)(void *)) = 0;
+
+  if (!Searched) {
+    Searched = true;
+    *(void **)&rf =
+        llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("__register_frame");
+  }
+  if (rf)
+    rf(p);
+}
+
+static void __deregister_frame(void *p) {
+  static bool Searched = false;
+  static void((*df)(void *)) = 0;
+
+  if (!Searched) {
+    Searched = true;
+    *(void **)&df = llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(
+        "__deregister_frame");
+  }
+  if (df)
+    df(p);
+}
+#endif
+
 using namespace litejit;
 
 static Elf_Shdr *elf_get_shdr(Elf_Ehdr *elf, uint_t i) {
   return (Elf_Shdr *)((char *)elf + elf->e_shoff) + i;
 }
 
-static const char *elf_get_name_from_tab(Elf_Ehdr *elf, uint_t sh_link,
+static const char *elf_get_name_from_tab(Elf_Ehdr *elf, Elf_Shdr *strtab,
                                          uint32_t st_name) {
-  Elf_Shdr *strtab = elf_get_shdr(elf, sh_link);
   return (const char *)elf + strtab->sh_offset + st_name;
+}
+
+static const char *elf_get_name_from_tab(Elf_Ehdr *elf, uint32_t strndx,
+                                         uint32_t st_name) {
+  return elf_get_name_from_tab(elf, elf_get_shdr(elf, strndx), st_name);
+}
+
+static const char *elf_get_sec_name(Elf_Ehdr *elf, Elf_Shdr *shdr) {
+  uint32_t strndx = 0;
+  if (elf->e_shstrndx < SHN_LORESERVE)
+    strndx = elf->e_shstrndx;
+  else if (elf->e_shstrndx == SHN_XINDEX)
+    strndx = elf_get_shdr(elf, 0)->sh_link;
+  else
+    return nullptr;
+
+  return elf_get_name_from_tab(elf, strndx, shdr->sh_name);
 }
 
 static Elf_Sym *elf_find_sym(Elf_Ehdr *elf, Elf_Shdr *symtab, uint_t idx) {
@@ -261,6 +322,9 @@ LiteJIT::~LiteJIT() {
   // Run the termination code
   for (auto f : fini)
     f();
+  // Deregister eh_frame
+  for (auto p : eh_frame)
+    __deregister_frame(p);
   munmap(base, MemSize * 1024);
 }
 
@@ -323,7 +387,7 @@ int LiteJIT::addElf(char *_elf) {
   Elf_Ehdr *elf = (Elf_Ehdr *)_elf;
   int err = 0;
 
-  if (elf->e_type != ET_REL && !check_elf(elf))
+  if (elf->e_type != ET_REL || !check_elf(elf))
     error_ret(ENOEXEC);
 
   // Copy text/data to memory and initialize bss on memory
@@ -373,6 +437,15 @@ int LiteJIT::addElf(char *_elf) {
       // assert(shdr->sh_entsize == sizeof(FiniFTy));
       for (uint_t i = 0; i < shdr->sh_size / sizeof(FiniFTy); ++i)
         fini.push_back(((FiniFTy *)find_allocated_base(shdr_idx))[i]);
+    } else if ((shdr->sh_type == SHT_PROGBITS || shdr->sh_type >= SHT_LOOS) &&
+               (strncmp(elf_get_sec_name(elf, shdr), ".eh_frame", 10) == 0) &&
+               (shdr->sh_size > 0)) {
+      void *frame = find_allocated_base(shdr_idx);
+      if (frame != nullptr) {
+        // Register eh_frame
+        __register_frame(frame);
+        eh_frame.push_back(frame);
+      }
     }
     return 0;
   });
@@ -442,8 +515,8 @@ int LiteJIT::addC(const char *c) {
     close(cfd[0]);
     close(cfd[1]);
     dup2(ofd, STDOUT_FILENO);
-    execlp("cc", "cc", "-fPIC", "-fno-plt", "-xc", "-", "-o", "/dev/stdout",
-           "-c", "-pipe", nullptr);
+    execlp("cc", "cc", "-fPIC", "-fno-asynchronous-unwind-tables", "-fno-plt",
+           "-xc", "-", "-o", "/dev/stdout", "-c", "-pipe", nullptr);
     _exit(-1);
   } else {
     int status;

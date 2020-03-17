@@ -56,6 +56,7 @@ private:
   SymbolMapTy SymbolMap;     // Aka. defined symbol map (map[name] = &sym)
   SymbolMapTy GOTSymbolMap;  // Aka. declared symbol map (map[name] = &got[sym])
   std::vector<FiniFTy> fini;
+  std::vector<void *> eh_frame;
 
   LiteJIT(unsigned MemSize, char *base);
 
