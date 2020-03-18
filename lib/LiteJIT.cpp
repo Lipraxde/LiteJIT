@@ -59,11 +59,12 @@
 #define read64le(loc)       read64(loc)
 
 // Extract bits V[Begin:End], where range is inclusive, and Begin must be < 63.
-static uint64_t extractBits(uint64_t v, uint32_t begin, uint32_t end) {
+[[maybe_unused]] static uint64_t extractBits(uint64_t v, uint32_t begin,
+                                             uint32_t end) {
   return (v & ((1ULL << (begin + 1)) - 1)) >> end;
 }
 
-static int64_t SignExtend64(uint64_t X, unsigned B) {
+[[maybe_unused]] static int64_t SignExtend64(uint64_t X, unsigned B) {
   assert(B > 0 && "Bit width can't be 0.");
   assert(B <= 64 && "Bit width out of range.");
   return int64_t(X << (64 - B)) >> (64 - B);
@@ -102,45 +103,12 @@ static int64_t SignExtend64(uint64_t X, unsigned B) {
 #if (defined(__GNUC__) && !defined(__ARM_EABI__) && !defined(__ia64__) &&      \
      !(defined(_AIX) && defined(__ibmxl__)) && !defined(__SEH__) &&            \
      !defined(__USING_SJLJ_EXCEPTIONS__))
-#define HAVE_EHTABLE_SUPPORT 1
-#else
-#define HAVE_EHTABLE_SUPPORT 0
-#endif
-
-#if HAVE_EHTABLE_SUPPORT
 extern "C" void __register_frame(void *);
 extern "C" void __deregister_frame(void *);
 #else
-// The building compiler does not have __(de)register_frame but
-// it may be found at runtime in a dynamically-loaded library.
-// For example, this happens when building LLVM with Visual C++
-// but using the MingW runtime.
-static void __register_frame(void *p) {
-  static bool Searched = false;
-  static void((*rf)(void *)) = 0;
-
-  if (!Searched) {
-    Searched = true;
-    *(void **)&rf =
-        llvm::sys::DynamicLibrary::SearchForAddressOfSymbol("__register_frame");
-  }
-  if (rf)
-    rf(p);
-}
-
-static void __deregister_frame(void *p) {
-  static bool Searched = false;
-  static void((*df)(void *)) = 0;
-
-  if (!Searched) {
-    Searched = true;
-    *(void **)&df = llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(
-        "__deregister_frame");
-  }
-  if (df)
-    df(p);
-}
+#error Sorry, not supported
 #endif
+/**********************************/
 
 using namespace litejit;
 
@@ -184,13 +152,11 @@ static Elf_Sym *elf_find_sym(Elf_Ehdr *elf, Elf_Shdr *symtab, uint_t idx) {
 // Otherwise            : return symval
 // FIXME: Symbol resolve is very hard. QwQ
 static uintptr_t elf_resolve_symval(Elf_Ehdr *elf, Elf_Shdr *symtab,
-                                    Elf_Sym *symbol,
+                                    Elf_Sym *symbol, const char *symname,
                                     const LiteJIT::AllocatedSecsTy &SecMem) {
   if (symbol->st_shndx == SHN_UNDEF) {
     // External symbol, lookup value
-    const char *name =
-        elf_get_name_from_tab(elf, symtab->sh_link, symbol->st_name);
-    uintptr_t target = (uintptr_t)dlsym(nullptr, name);
+    uintptr_t target = (uintptr_t)dlsym(nullptr, symname);
     if (target == (uintptr_t)0) {
       if (ELF_ST_BIND(symbol->st_info) & STB_WEAK) {
         // Weak symbol initialized as 0
@@ -255,6 +221,7 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
   Elf_Shdr *symtab = nullptr;
   Elf_Sym *sym = nullptr;
   uintptr_t symval = 0;
+  const char *symname = nullptr;
   base += rel->r_offset;
 
   // If this relocation type requires the symval (S), find symtab, sym, symval.
@@ -275,7 +242,8 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
     sym = elf_find_sym(elf, symtab, idx);
     if (sym == nullptr) // Why?
       error_ret(-1);
-    symval = elf_resolve_symval(elf, symtab, sym, SecMemTmp);
+    symname = elf_get_name_from_tab(elf, symtab->sh_link, sym->st_name);
+    symval = elf_resolve_symval(elf, symtab, sym, symname, SecMemTmp);
     if (symval == (uintptr_t)-1)
       error_ret(-1);
   }
@@ -288,11 +256,8 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
   case R_X86_64_GOTPCREL:
   case R_X86_64_GOTPCRELX:
   case R_X86_64_REX_GOTPCRELX: {
-    // Find symbol in got
-    const char *name =
-        elf_get_name_from_tab(elf, symtab->sh_link, sym->st_name);
     // Get/Allocate and bind
-    got = placeGOT(name, symval);
+    got = placeGOT(symname, symval);
     if (got == nullptr)
       error_ret(ENOMEM);
   }
@@ -386,15 +351,14 @@ LiteJIT::~LiteJIT() {
 }
 
 char *LiteJIT::find_allocated_base(uint_t i, const AllocatedSecsTy &SecMem) {
-  char *ptr = nullptr;
-  std::binary_search(
+  auto range = std::equal_range(
       SecMem.begin(), SecMem.end(), AllocatedSecTy{i, nullptr},
       [&](const AllocatedSecTy &a, const AllocatedSecTy &b) -> bool {
-        if (a.first == b.first)
-          ptr = a.second != nullptr ? a.second : b.second;
         return a.first < b.first;
       });
-  return ptr;
+  if (range.first != SecMem.end())
+    return range.first->second;
+  return nullptr;
 }
 
 int LiteJIT::allocate(Elf_Ehdr *elf) {
@@ -486,14 +450,16 @@ int LiteJIT::addElf(char *_elf) {
       // Run the initialization code in init array
       // The sh_entsize of the elf which is compiled by clang is 0 (why?)
       // assert(shdr->sh_entsize == sizeof(InitFTy *));
+      InitFTy *f = (InitFTy *)find_allocated_base(shdr_idx);
       for (uint_t i = 0; i < shdr->sh_size / sizeof(InitFTy); ++i)
-        ((InitFTy *)find_allocated_base(shdr_idx))[i]();
+        (f[i])();
     } else if (shdr->sh_type == SHT_FINI_ARRAY) {
       // Record the fini array
       // The sh_entsize of the elf which is compiled by clang is 0 (why?)
       // assert(shdr->sh_entsize == sizeof(FiniFTy));
+      FiniFTy *f = ((FiniFTy *)find_allocated_base(shdr_idx));
       for (uint_t i = 0; i < shdr->sh_size / sizeof(FiniFTy); ++i)
-        fini.push_back(((FiniFTy *)find_allocated_base(shdr_idx))[i]);
+        fini.push_back(f[i]);
     } else if ((shdr->sh_type == SHT_PROGBITS || shdr->sh_type >= SHT_LOOS) &&
                (strncmp(elf_get_sec_name(elf, shdr), ".eh_frame", 10) == 0) &&
                (shdr->sh_size > 0)) {
@@ -580,13 +546,15 @@ int LiteJIT::addC(const char *c) {
     int corpse;
     int err = 0;
     if (c != nullptr) {
-      (void)write(cfd[1], c, strlen(c));
+      if (write(cfd[1], c, strlen(c)) == -1)
+        error_ret(errno);
       fsync(cfd[1]);
     } else {
       char input[256];
       ssize_t rsize;
       while ((rsize = read(STDIN_FILENO, input, 256)) != 0) {
-        (void)write(cfd[1], input, rsize);
+        if (write(cfd[1], input, rsize) == -1)
+          error_ret(errno);
       }
       static bool once = false;
       if (once == true)

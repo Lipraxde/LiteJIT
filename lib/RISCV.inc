@@ -236,19 +236,22 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
   uintptr_t *got = nullptr;
   Elf_Shdr *symtab = nullptr;
   Elf_Sym *sym = nullptr;
+  const char *symname = nullptr;
   uintptr_t symval = 0;
   uintptr_t position = (uintptr_t)base + rel->r_offset;
 
-  auto resolve_symval =
-      [&](Elf_Ehdr *elf, uint32_t _symtab, uint_t symidx,
-          const LiteJIT::AllocatedSecsTy &SecMem) -> uintptr_t {
+  auto resolve_symval = [&symtab, &sym, &symname, &symval](
+                            Elf_Ehdr *elf, uint32_t _symtab, uint_t symidx,
+                            const LiteJIT::AllocatedSecsTy &SecMem) -> int {
     if (_symtab == SHN_UNDEF || symidx == STN_UNDEF)
       error_ret(-1);
     symtab = elf_get_shdr(elf, _symtab);
     sym = elf_find_sym(elf, symtab, symidx);
     if (sym == nullptr) // Why?
       error_ret(-1);
-    return elf_resolve_symval(elf, symtab, sym, SecMem);
+    symname = elf_get_name_from_tab(elf, symtab->sh_link, sym->st_name);
+    symval = elf_resolve_symval(elf, symtab, sym, symname, SecMem);
+    return 0;
   };
 
   // If this relocation type requires the symval (S), find symtab, sym, symval.
@@ -266,9 +269,9 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
   case R_RISCV_RVC_BRANCH:
   case R_RISCV_RVC_JUMP:
   case R_RISCV_RVC_LUI:
-    symval = resolve_symval(elf, _symtab, ELF_R_SYM(rel->r_info), SecMemTmp);
+    if (resolve_symval(elf, _symtab, ELF_R_SYM(rel->r_info), SecMemTmp) == -1)
+      error_ret(-1);
     if (symval == (uintptr_t)-1)
-
       error_ret(-1);
   }
 
@@ -279,10 +282,8 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
   case R_RISCV_CALL_PLT:
   case R_RISCV_GOT_HI20: {
     // Find symbol in got
-    const char *name =
-        elf_get_name_from_tab(elf, symtab->sh_link, sym->st_name);
     // Get/Allocate and bind
-    got = placeGOT(name, symval);
+    got = placeGOT(symname, symval);
     if (got == nullptr)
       error_ret(ENOMEM);
   }
@@ -356,20 +357,20 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
       uint32_t rtype = ELF_R_TYPE(IT->r_info);
       if (rtype == R_RISCV_PCREL_HI20) {
         // Replace symbol
-        symval = resolve_symval(elf, _symtab, ELF_R_SYM(IT->r_info), SecMemTmp);
+        if (resolve_symval(elf, _symtab, ELF_R_SYM(IT->r_info), SecMemTmp) ==
+            -1)
+          error_ret(-1);
         tmp = symval + IT->r_addend - ((uintptr_t)base + IT->r_offset);
         break;
       } else if (rtype == R_RISCV_GOT_HI20) {
         // Replace symbol
-        symval = resolve_symval(elf, _symtab, ELF_R_SYM(IT->r_info), SecMemTmp);
-        // Find symbol in got
-        const char *name =
-            elf_get_name_from_tab(elf, symtab->sh_link, sym->st_name);
+        if (resolve_symval(elf, _symtab, ELF_R_SYM(IT->r_info), SecMemTmp) ==
+            -1)
+          error_ret(-1);
         // Get/Allocate
-        uintptr_t *_got = getOrAllocateGOT(name);
-        if (_got == nullptr)
+        got = getOrAllocateGOT(symname);
+        if (got == nullptr)
           error_ret(ENOMEM);
-        got = _got;
         tmp = (uintptr_t)got + IT->r_addend - ((uintptr_t)base + IT->r_offset);
         break;
       }
