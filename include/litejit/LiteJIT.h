@@ -13,10 +13,11 @@
 #include <elf.h>
 #include <errno.h>
 
-#if defined(__x86_64__) || defined(__amd64__)
+#if defined(__x86_64__) || defined(__amd64__) ||                               \
+    (defined(__riscv) && (__riscv_xlen == 64))
 #define ELF_WORD_SIZE 64
 #else
-#define ELF_WORD_SIZE 32
+#error Unknown ELF_WORD_SIZE
 #endif
 
 #define __CAT1(a, b)           a##b
@@ -72,37 +73,36 @@ private:
     return std::make_pair(0, ret);
   }
 
-  // Return: {err, ptr}
-  std::pair<int, uintptr_t *> allocateGOT(const std::string &name) {
+  uintptr_t *allocateGOT(const std::string &name) {
     if (text <= (char *)got) {
       GOTSymbolMap.insert({name, (uintptr_t)got});
-      return std::make_pair(0, got--);
+      *got = 0;
+      return got--;
     } else
-      return std::make_pair(ENOMEM, nullptr);
+      return nullptr;
   }
 
-  // Return: {err, ptr}
-  std::pair<int, uintptr_t *> getOrAllocateGOT(const std::string &name) {
+  uintptr_t *getOrAllocateGOT(const std::string &name) {
     auto IT = GOTSymbolMap.find(name);
     if (IT != GOTSymbolMap.end())
-      return {0, (uintptr_t *)IT->second};
+      return (uintptr_t *)IT->second;
     return allocateGOT(name);
   }
 
-  // Return: {err, ptr}
-  std::pair<int, uintptr_t *> placeGOT(const std::string &name, uintptr_t val) {
-    auto [err, _got] = getOrAllocateGOT(name);
-    if (err)
-      return {err, nullptr};
-    *_got = val;
-    return {err, _got};
+  uintptr_t *placeGOT(const std::string &name, uintptr_t val) {
+    uintptr_t *_got = getOrAllocateGOT(name);
+    if (_got != nullptr)
+      *_got = val;
+    return _got;
   }
 
   int allocate(Elf_Ehdr *);
   int relocate(Elf_Ehdr *);
 
-  int do_elf_relc(Elf_Ehdr *elf, uint32_t symtab, Elf_Rel *rel, char *base);
-  int do_elf_relca(Elf_Ehdr *elf, uint32_t symtab, Elf_Rela *rel, char *base);
+  int do_elf_relc(Elf_Ehdr *elf, Elf_Shdr *, uint32_t symtab, Elf_Rel *rel,
+                  char *base);
+  int do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *, uint32_t symtab, Elf_Rela *rel,
+                   char *base);
 
 public:
   // MemSize: nKB

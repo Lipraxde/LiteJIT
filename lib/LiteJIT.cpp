@@ -41,6 +41,62 @@
 #define ASSERT_WORD32(v)                                                       \
   assert((int64_t)(v) < INT32_MAX && (int64_t)(v) > INT32_MIN);
 
+#define write8(loc, val)    *(uint8_t *)(loc) = (val);
+#define write16(loc, val)   *(uint16_t *)(loc) = (val);
+#define write32(loc, val)   *(uint32_t *)(loc) = (val);
+#define write64(loc, val)   *(uint64_t *)(loc) = (val);
+#define write8le(loc, val)  write8(loc, val)
+#define write16le(loc, val) write16(loc, val)
+#define write32le(loc, val) write32(loc, val)
+#define write64le(loc, val) write64(loc, val)
+#define read8(loc)          *(uint8_t *)(loc)
+#define read16(loc)         *(uint16_t *)(loc)
+#define read32(loc)         *(uint32_t *)(loc)
+#define read64(loc)         *(uint64_t *)(loc)
+#define read8le(loc)        read8(loc)
+#define read16le(loc)       read16(loc)
+#define read32le(loc)       read32(loc)
+#define read64le(loc)       read64(loc)
+
+// Extract bits V[Begin:End], where range is inclusive, and Begin must be < 63.
+static uint64_t extractBits(uint64_t v, uint32_t begin, uint32_t end) {
+  return (v & ((1ULL << (begin + 1)) - 1)) >> end;
+}
+
+static int64_t SignExtend64(uint64_t X, unsigned B) {
+  assert(B > 0 && "Bit width can't be 0.");
+  assert(B <= 64 && "Bit width out of range.");
+  return int64_t(X << (64 - B)) >> (64 - B);
+}
+
+// Make sure that V can be represented as an N bit signed integer.
+#define checkInt(v, n)                                                         \
+  do {                                                                         \
+    if ((int64_t)(v) != SignExtend64((int64_t)(v), (n)))                       \
+      error_ret(-1);                                                           \
+  } while (0)
+
+// Make sure that V can be represented as an N bit unsigned integer.
+#define checkUInt(v, n)                                                        \
+  do {                                                                         \
+    if (((uint64_t)(v) >> (n)) != 0)                                           \
+      error_ret(-1);                                                           \
+  } while (0)
+
+// Make sure that V can be represented as an N bit signed or unsigned integer.
+#define checkIntUInt(v, n)                                                     \
+  do {                                                                         \
+    if (((int64_t)(v) != SignExtend64((int64_t)(v), (n))) &&                   \
+        (((uint64_t)(v) >> (n)) != 0))                                         \
+      error_ret(-1);                                                           \
+  } while (0)
+
+#define checkAlignment(v, n)                                                   \
+  do {                                                                         \
+    if (((uint64_t)(v) & (n - 1)) != 0)                                        \
+      error_ret(-1);                                                           \
+  } while (0)
+
 /* [llvm] RTDyldMemoryManager.cpp */
 // Determine whether we can register EH tables.
 #if (defined(__GNUC__) && !defined(__ARM_EABI__) && !defined(__ia64__) &&      \
@@ -188,13 +244,13 @@ static int emit_pseudo_plt(char *plt, uintptr_t got) {
   return 0;
 }
 
-int LiteJIT::do_elf_relc(Elf_Ehdr *elf, uint32_t _symtab, Elf_Rel *rel,
-                         char *base) {
+int LiteJIT::do_elf_relc(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
+                         Elf_Rel *rel, char *base) {
   error_ret(-1);
 }
 
-int LiteJIT::do_elf_relca(Elf_Ehdr *elf, uint32_t _symtab, Elf_Rela *rel,
-                          char *base) {
+int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
+                          Elf_Rela *rel, char *base) {
   uintptr_t *got = nullptr;
   Elf_Shdr *symtab = nullptr;
   Elf_Sym *sym = nullptr;
@@ -236,9 +292,9 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, uint32_t _symtab, Elf_Rela *rel,
     const char *name =
         elf_get_name_from_tab(elf, symtab->sh_link, sym->st_name);
     // Get/Allocate and bind
-    auto [err, _got] = placeGOT(name, symval);
-    if (err)
-      error_ret(err);
+    uintptr_t *_got = placeGOT(name, symval);
+    if (_got == nullptr)
+      error_ret(ENOMEM);
     got = _got;
   }
   }
@@ -302,6 +358,8 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, uint32_t _symtab, Elf_Rela *rel,
     error_ret(-1);
   }
 }
+#elif defined(__riscv)
+#include "RISCV.inc"
 #else
 #error Sorry, not implemented
 #endif
@@ -362,7 +420,7 @@ int LiteJIT::relocate(Elf_Ehdr *elf) {
       char *allocated_base = find_allocated_base(shdr->sh_info);
       assert(shdr->sh_entsize == sizeof(Elf_Rel));
       for (uint_t i = 0; i < shdr->sh_size / sizeof(Elf_Rel); ++i) {
-        int err = do_elf_relc(elf, shdr->sh_link,
+        int err = do_elf_relc(elf, shdr, shdr->sh_link,
                               (Elf_Rel *)((char *)elf + shdr->sh_offset) + i,
                               allocated_base);
         if (err)
@@ -372,7 +430,7 @@ int LiteJIT::relocate(Elf_Ehdr *elf) {
       char *allocated_base = find_allocated_base(shdr->sh_info);
       assert(shdr->sh_entsize == sizeof(Elf_Rela));
       for (uint_t i = 0; i < shdr->sh_size / sizeof(Elf_Rela); ++i) {
-        int err = do_elf_relca(elf, shdr->sh_link,
+        int err = do_elf_relca(elf, shdr, shdr->sh_link,
                                (Elf_Rela *)((char *)elf + shdr->sh_offset) + i,
                                allocated_base);
         if (err)
@@ -502,7 +560,7 @@ int LiteJIT::addC(const char *c) {
   //   Fatal error: can't close /dev/stdout: Illegal seek
   // Answer: https://stackoverflow.com/questions/47181017/
   FILE *ofile = tmpfile();
-  // FILE *ofile = fopen("test.s", "w+");
+  // FILE *ofile = fopen("test.o", "w+");
   int ofd = fileno(ofile);
 
   pid_t pid = fork();
