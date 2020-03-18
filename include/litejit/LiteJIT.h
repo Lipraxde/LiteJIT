@@ -74,12 +74,14 @@ private:
   }
 
   uintptr_t *allocateGOT(const std::string &name) {
-    if (text <= (char *)got) {
+    if (text <= (char *)(--got)) {
       GOTSymbolMap.insert({name, (uintptr_t)got});
       *got = 0;
-      return got--;
-    } else
+      return got;
+    } else {
+      ++got;
       return nullptr;
+    }
   }
 
   uintptr_t *getOrAllocateGOT(const std::string &name) {

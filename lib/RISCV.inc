@@ -282,10 +282,9 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
     const char *name =
         elf_get_name_from_tab(elf, symtab->sh_link, sym->st_name);
     // Get/Allocate and bind
-    uintptr_t *_got = placeGOT(name, symval);
-    if (_got == nullptr)
+    got = placeGOT(name, symval);
+    if (got == nullptr)
       error_ret(ENOMEM);
-    got = _got;
   }
   }
 

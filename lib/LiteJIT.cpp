@@ -292,10 +292,9 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
     const char *name =
         elf_get_name_from_tab(elf, symtab->sh_link, sym->st_name);
     // Get/Allocate and bind
-    uintptr_t *_got = placeGOT(name, symval);
-    if (_got == nullptr)
+    got = placeGOT(name, symval);
+    if (got == nullptr)
       error_ret(ENOMEM);
-    got = _got;
   }
   }
 
@@ -366,7 +365,7 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
 
 LiteJIT::LiteJIT(unsigned MemSize, char *base)
     : MemSize(MemSize), base(base), text(base),
-      got((uintptr_t *)(base + MemSize * 1024 - sizeof(uintptr_t))) {}
+      got((uintptr_t *)(base + MemSize * 1024)) {}
 
 std::unique_ptr<LiteJIT> LiteJIT::createLiteJIT(unsigned MemSize) {
   void *base = mmap(nullptr, MemSize * 1024, PROT_READ | PROT_WRITE | PROT_EXEC,
@@ -621,8 +620,7 @@ void LiteJIT::dump(std::ostream &out, bool detail) const {
       << "  Memory Address: " << (void *)base << '\n'
       << "  Memory Size: " << MemSize << "KB\n"
       << "  Text Size: " << text - base << "B\n"
-      << "  GOT Size: "
-      << (uintptr_t *)(base + MemSize * 1024 - sizeof(uintptr_t)) - got << '\n'
+      << "  GOT Size: " << (uintptr_t *)(base + MemSize * 1024) - got << '\n'
       << "  Free Space: " << ((text <= (char *)got) ? ((char *)got) - text : 0)
       << "B\n";
 
