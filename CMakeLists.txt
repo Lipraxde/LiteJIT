@@ -34,8 +34,17 @@ set(CMAKE_MODULE_PATH
 
 add_compile_options(-Wall)
 
-option(CMAKE_IGNORE_ERR "Ignore error in LiteJIT" TRUE)
-if (${CMAKE_IGNORE_ERR})
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    # LiteJIT is a top-level project, do not ignore errors for debugging
+    set(DEFAULT_LITEJIT_IGNORE_ERR FALSE)
+else()
+    # LiteJIT is not a top-level project, ignore errors for using
+    set(DEFAULT_LITEJIT_IGNORE_ERR TRUE)
+endif()
+
+option(LITEJIT_IGNORE_ERR "Ignore error in LiteJIT" ${DEFAULT_LITEJIT_IGNORE_ERR})
+if (${LITEJIT_IGNORE_ERR})
     add_definitions(-DIGNORE_ERR)
 endif()
 
