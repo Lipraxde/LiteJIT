@@ -237,8 +237,9 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
   Elf_Shdr *symtab = nullptr;
   Elf_Sym *sym = nullptr;
   const char *symname = nullptr;
-  uintptr_t symval = 0;
+  uintptr_t symval = (uintptr_t) nullptr;
   uintptr_t position = (uintptr_t)base + rel->r_offset;
+  const uint_t type = ELF_R_TYPE(rel->r_info);
 
   auto resolve_symval = [&symtab, &sym, &symname, &symval](
                             Elf_Ehdr *elf, uint32_t _symtab, uint_t symidx,
@@ -251,33 +252,49 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
       error_ret(-1);
     symname = elf_get_name_from_tab(elf, symtab->sh_link, sym->st_name);
     symval = elf_resolve_symval(elf, symtab, sym, symname, SecMem);
+    if (symval == (uintptr_t)-1)
+      error_ret(-1);
     return 0;
   };
 
   // If this relocation type requires the symval (S), find symtab, sym, symval.
-  switch (ELF_R_TYPE(rel->r_info)) {
+  switch (type) {
   case R_RISCV_32:
   case R_RISCV_64:
-  case R_RISCV_BRANCH:
+  case R_RISCV_HI20:
+  case R_RISCV_LO12_I:
+  case R_RISCV_LO12_S:
+  case R_RISCV_RVC_LUI:
+  case R_RISCV_ADD8:
+  case R_RISCV_ADD16:
+  case R_RISCV_ADD32:
+  case R_RISCV_ADD64:
+  case R_RISCV_SET6:
+  case R_RISCV_SET8:
+  case R_RISCV_SET16:
+  case R_RISCV_SET32:
+  case R_RISCV_SUB6:
+  case R_RISCV_SUB8:
+  case R_RISCV_SUB16:
+  case R_RISCV_SUB32:
+  case R_RISCV_SUB64:
   case R_RISCV_JAL:
-  case R_RISCV_CALL:
-  case R_RISCV_CALL_PLT:
-  case R_RISCV_GOT_HI20:
+  case R_RISCV_BRANCH:
   case R_RISCV_PCREL_HI20:
-  case R_RISCV_PCREL_LO12_I:
-  case R_RISCV_PCREL_LO12_S:
   case R_RISCV_RVC_BRANCH:
   case R_RISCV_RVC_JUMP:
-  case R_RISCV_RVC_LUI:
+  case R_RISCV_32_PCREL:
+  case R_RISCV_CALL:
+  case R_RISCV_CALL_PLT:
+  case R_RISCV_PCREL_LO12_I:
+  case R_RISCV_PCREL_LO12_S:
     if (resolve_symval(elf, _symtab, ELF_R_SYM(rel->r_info), SecMemTmp) == -1)
-      error_ret(-1);
-    if (symval == (uintptr_t)-1)
       error_ret(-1);
   }
 
   // If this relocation type requires a got, allocate it.
   // And bind symbol to got.
-  switch (ELF_R_TYPE(rel->r_info)) {
+  switch (type) {
   case R_RISCV_CALL:
   case R_RISCV_CALL_PLT:
   case R_RISCV_GOT_HI20: {
@@ -291,7 +308,7 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
 
   uintptr_t tmp = 0;
   // Do calculation
-  switch (ELF_R_TYPE(rel->r_info)) {
+  switch (type) {
   case R_RISCV_32:
   case R_RISCV_64:
   case R_RISCV_HI20:
@@ -354,7 +371,7 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
                                     return lhs.r_offset < rhs.r_offset;
                                   });
     for (auto IT = range.first; IT != range.second; ++IT) {
-      uint32_t rtype = ELF_R_TYPE(IT->r_info);
+      uint_t rtype = ELF_R_TYPE(IT->r_info);
       if (rtype == R_RISCV_PCREL_HI20) {
         // Replace symbol
         if (resolve_symval(elf, _symtab, ELF_R_SYM(IT->r_info), SecMemTmp) ==
@@ -395,5 +412,5 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
   }
 
   // Do relocation
-  return do_relocation(ELF_R_TYPE(rel->r_info), (uint8_t *)position, tmp);
+  return do_relocation(type, (uint8_t *)position, tmp);
 }
