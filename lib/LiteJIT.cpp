@@ -455,7 +455,9 @@ int LiteJIT::addElf(char *_elf) {
                 if (RegisterSymbolEvent(name, (void *)symval))
                   HasDeleteEventSymbol.push_back(name);
               }
+#if !LITEJIT_DISABLE_LOOKUP
               SymbolMap[name] = symval;
+#endif
             }
           }
         }
@@ -609,11 +611,16 @@ void LiteJIT::dump(std::ostream &out, bool detail) const {
   if (detail == false)
     return;
 
+#if !LITEJIT_DISABLE_LOOKUP
   if (SymbolMap.size()) {
     out << "[Symbol Map]\n";
     for (auto &[Name, Addr] : SymbolMap)
       out << "  " << Name << ": " << (void *)Addr << '\n';
   }
+#else
+  out << "[Symbol Map]\n  LiteJIT is configured with LITEJIT_DISABLE_LOOKUP.\n "
+         " The symbol table is unavailable.\n";
+#endif
   if (GOTSymbolMap.size()) {
     out << "[GOT Symbol Map]\n";
     for (auto &[Name, Addr] : GOTSymbolMap)

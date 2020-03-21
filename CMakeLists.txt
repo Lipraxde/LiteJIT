@@ -44,6 +44,7 @@ else()
 endif()
 
 option(LITEJIT_IGNORE_ERROR "Ignore error in LiteJIT" ${DEFAULT_LITEJIT_IGNORE_ERR})
+option(LITEJIT_DISABLE_LOOKUP "Disable lookup function to avoid using internal symbol table which is a string map" FALSE)
 configure_file(${PROJECT_SOURCE_DIR}/cmake/litejit-config.h.in
                ${PROJECT_BINARY_DIR}/include/litejit-config.h)
 

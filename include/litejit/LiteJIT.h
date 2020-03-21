@@ -58,8 +58,10 @@ private:
   char *text;
   uintptr_t *got;
   AllocatedSecsTy SecMemTmp; // Temporary record {sec_number, allocated_addr}
-  SymbolMapTy SymbolMap;     // Aka. defined symbol map (map[name] = &sym)
-  SymbolMapTy GOTSymbolMap;  // Aka. declared symbol map (map[name] = &got[sym])
+#if !LITEJIT_DISABLE_LOOKUP
+  SymbolMapTy SymbolMap; // Aka. defined symbol map (map[name] = &sym)
+#endif
+  SymbolMapTy GOTSymbolMap; // Aka. declared symbol map (map[name] = &got[sym])
   std::vector<FiniFTy> fini;
   std::vector<void *> eh_frame;
   SymbolFinderTy SymbolFinder = defaultSymbolFinder;
@@ -146,6 +148,7 @@ public:
   // Aka. dlsym(nullptr, name)
   static void *defaultSymbolFinder(const char *);
 
+#if !LITEJIT_DISABLE_LOOKUP
   void *lookup(const std::string &name) const {
     auto IT = SymbolMap.find(name);
     if (IT != SymbolMap.end())
@@ -154,6 +157,7 @@ public:
   }
 
   void *lookup(const char *name) const { return lookup(std::string(name)); }
+#endif
 
   void dump(std::ostream &, bool detail = false) const;
 
