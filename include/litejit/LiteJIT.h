@@ -2,7 +2,6 @@
 #define LITEJIT_LITEJIT_H
 
 #include <cstdint>
-#include <functional>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -43,6 +42,9 @@ class LiteJIT {
 public:
   using AllocatedSecTy = std::pair<uint_t, char *>; // {n, addr}
   using AllocatedSecsTy = std::vector<AllocatedSecTy>;
+  using SymbolFinderTy = void *(*)(const char *);
+  using RegisterSymbolEventTy = bool (*)(const char *, void *);
+  using DeleteSymbolEventTy = void (*)(const char *);
 
 private:
   using SymbolMapTy = std::map<std::string, uintptr_t>;
@@ -58,6 +60,10 @@ private:
   SymbolMapTy GOTSymbolMap;  // Aka. declared symbol map (map[name] = &got[sym])
   std::vector<FiniFTy> fini;
   std::vector<void *> eh_frame;
+  SymbolFinderTy SymbolFinder = defaultSymbolFinder;
+  std::vector<std::string> HasDeleteEventSymbol;
+  RegisterSymbolEventTy RegisterSymbolEvent = nullptr;
+  DeleteSymbolEventTy DeleteSymbolEvent = nullptr;
 
   LiteJIT(unsigned MemSize, char *base);
 
@@ -122,6 +128,21 @@ public:
   int addElf(int fd);
   int addElf(const char *Path);
   int addC(const char *c);
+
+  // The symbol finder is used to find the undefined symbol
+  void setSymbolFinder(SymbolFinderTy finder) { SymbolFinder = finder; }
+
+  // The handler return true for the symbol has delete event
+  void setRegisterSymbolEvent(RegisterSymbolEventTy handler) {
+    RegisterSymbolEvent = handler;
+  }
+
+  void setDeleteSymbolEvent(DeleteSymbolEventTy handler) {
+    DeleteSymbolEvent = handler;
+  }
+
+  // Aka. dlsym(nullptr, name)
+  static void *defaultSymbolFinder(const char *);
 
   void *lookup(const std::string &name) const {
     auto IT = SymbolMap.find(name);

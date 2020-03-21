@@ -153,14 +153,15 @@ static Elf_Sym *elf_find_sym(Elf_Ehdr *elf, Elf_Shdr *symtab, uint_t idx) {
 // FIXME: Symbol resolve is very hard. QwQ
 static uintptr_t elf_resolve_symval(Elf_Ehdr *elf, Elf_Shdr *symtab,
                                     Elf_Sym *symbol, const char *symname,
-                                    const LiteJIT::AllocatedSecsTy &SecMem) {
+                                    const LiteJIT::AllocatedSecsTy &SecMem,
+                                    LiteJIT::SymbolFinderTy &SymbolFinder) {
   if (symbol->st_shndx == SHN_UNDEF) {
     // External symbol, lookup value
-    uintptr_t target = (uintptr_t)dlsym(nullptr, symname);
-    if (target == (uintptr_t)0) {
+    uintptr_t target = (uintptr_t)SymbolFinder(symname);
+    if (target == (uintptr_t) nullptr) {
       if (ELF_ST_BIND(symbol->st_info) & STB_WEAK) {
         // Weak symbol initialized as 0
-        return (uintptr_t)0;
+        return (uintptr_t) nullptr;
       } else
         error_ret((uintptr_t)-1);
     }
@@ -243,7 +244,8 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
     if (sym == nullptr) // Why?
       error_ret(-1);
     symname = elf_get_name_from_tab(elf, symtab->sh_link, sym->st_name);
-    symval = elf_resolve_symval(elf, symtab, sym, symname, SecMemTmp);
+    symval =
+        elf_resolve_symval(elf, symtab, sym, symname, SecMemTmp, SymbolFinder);
     if (symval == (uintptr_t)-1)
       error_ret(-1);
   }
@@ -328,6 +330,10 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
 #error Sorry, not implemented
 #endif
 
+void *LiteJIT::defaultSymbolFinder(const char *symname) {
+  return dlsym(nullptr, symname);
+}
+
 LiteJIT::LiteJIT(unsigned MemSize, char *base)
     : MemSize(MemSize), base(base), text(base),
       got((uintptr_t *)(base + MemSize * 1024)) {}
@@ -347,6 +353,10 @@ LiteJIT::~LiteJIT() {
   // Deregister eh_frame
   for (auto p : eh_frame)
     __deregister_frame(p);
+  if (DeleteSymbolEvent != nullptr) {
+    for (const auto &name : HasDeleteEventSymbol)
+      DeleteSymbolEvent(name.c_str());
+  }
   munmap(base, MemSize * 1024);
 }
 
@@ -441,6 +451,10 @@ int LiteJIT::addElf(char *_elf) {
                   (uintptr_t)find_allocated_base(sym->st_shndx) + sym->st_value;
               const char *name =
                   elf_get_name_from_tab(elf, shdr->sh_link, sym->st_name);
+              if (RegisterSymbolEvent != nullptr) {
+                if (RegisterSymbolEvent(name, (void *)symval))
+                  HasDeleteEventSymbol.push_back(name);
+              }
               SymbolMap[name] = symval;
             }
           }

@@ -251,7 +251,8 @@ int LiteJIT::do_elf_relca(Elf_Ehdr *elf, Elf_Shdr *relshdr, uint32_t _symtab,
     if (sym == nullptr) // Why?
       error_ret(-1);
     symname = elf_get_name_from_tab(elf, symtab->sh_link, sym->st_name);
-    symval = elf_resolve_symval(elf, symtab, sym, symname, SecMem);
+    symval =
+        elf_resolve_symval(elf, symtab, sym, symname, SecMem, SymbolFinder);
     if (symval == (uintptr_t)-1)
       error_ret(-1);
     return 0;
