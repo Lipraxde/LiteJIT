@@ -118,7 +118,8 @@ private:
 
 public:
   // MemSize: nKB
-  static std::unique_ptr<LiteJIT> createLiteJIT(unsigned MemSize = 64);
+  static std::unique_ptr<LiteJIT> createLiteJIT(unsigned MemSize = 64,
+                                                void *memory = nullptr);
   ~LiteJIT();
 
   // Only support the relocatable file (For the shared object, why not just use

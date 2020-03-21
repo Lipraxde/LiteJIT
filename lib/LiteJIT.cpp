@@ -338,9 +338,17 @@ LiteJIT::LiteJIT(unsigned MemSize, char *base)
     : MemSize(MemSize), base(base), text(base),
       got((uintptr_t *)(base + MemSize * 1024)) {}
 
-std::unique_ptr<LiteJIT> LiteJIT::createLiteJIT(unsigned MemSize) {
-  void *base = mmap(nullptr, MemSize * 1024, PROT_READ | PROT_WRITE | PROT_EXEC,
-                    MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+std::unique_ptr<LiteJIT> LiteJIT::createLiteJIT(unsigned MemSize,
+                                                void *memory) {
+  void *base = nullptr;
+  if (memory != nullptr) {
+    if (mprotect(memory, MemSize * 1024, PROT_READ | PROT_WRITE | PROT_EXEC) ==
+        -1)
+      error_ret(nullptr);
+    base = memory;
+  } else
+    base = mmap(nullptr, MemSize * 1024, PROT_READ | PROT_WRITE | PROT_EXEC,
+                MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
   if (base == MAP_FAILED)
     error_ret(nullptr);
   return std::unique_ptr<LiteJIT>(new LiteJIT(MemSize, (char *)base));

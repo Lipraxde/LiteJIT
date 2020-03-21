@@ -13,8 +13,11 @@ endif()
 
 add_executable(demo demo.cpp)
 add_executable(demo2 demo2.cpp)
+add_executable(demo3 demo3.cpp)
 
 target_link_libraries(demo LiteJIT)
 set_target_properties(demo PROPERTIES ENABLE_EXPORTS 1)
 target_link_libraries(demo2 LiteJIT)
 set_target_properties(demo2 PROPERTIES ENABLE_EXPORTS 1)
+target_link_libraries(demo3 LiteJIT)
+set_target_properties(demo3 PROPERTIES ENABLE_EXPORTS 1)
