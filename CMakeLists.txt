@@ -43,16 +43,19 @@ else()
     set(DEFAULT_LITEJIT_IGNORE_ERR TRUE)
 endif()
 
-option(LITEJIT_IGNORE_ERR "Ignore error in LiteJIT" ${DEFAULT_LITEJIT_IGNORE_ERR})
-if (${LITEJIT_IGNORE_ERR})
-    add_definitions(-DIGNORE_ERR)
-endif()
+option(LITEJIT_IGNORE_ERROR "Ignore error in LiteJIT" ${DEFAULT_LITEJIT_IGNORE_ERR})
+configure_file(${PROJECT_SOURCE_DIR}/cmake/litejit-config.h.in
+               ${PROJECT_BINARY_DIR}/include/litejit-config.h)
 
 # Add include
 include_directories(include/)
+include_directories(${PROJECT_BINARY_DIR}/include/)
 
 # Install include header
 install(DIRECTORY   include/
+        DESTINATION ${INSTALL_INCLUDE_DIR}
+)
+install(DIRECTORY   ${PROJECT_BINARY_DIR}include/
         DESTINATION ${INSTALL_INCLUDE_DIR}
 )
 

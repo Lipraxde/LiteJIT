@@ -1,6 +1,8 @@
 #ifndef LITEJIT_LITEJIT_H
 #define LITEJIT_LITEJIT_H
 
+#include "litejit-config.h"
+
 #include <cstdint>
 #include <iostream>
 #include <map>

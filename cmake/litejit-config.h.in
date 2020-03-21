@@ -1,0 +1,7 @@
+#ifndef LITEJIT_CONFIG_H
+#define LITEJIT_CONFIG_H
+
+#cmakedefine01 LITEJIT_IGNORE_ERROR
+#cmakedefine01 LITEJIT_DISABLE_LOOKUP
+
+#endif // LITEJIT_CONFIG_H

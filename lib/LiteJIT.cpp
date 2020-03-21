@@ -18,7 +18,7 @@
 #include <unistd.h>
 #include <wchar.h>
 
-#if defined(IGNORE_ERR)
+#if LITEJIT_IGNORE_ERR
 #define error_ret(val)                                                         \
   do {                                                                         \
     return val;                                                                \
