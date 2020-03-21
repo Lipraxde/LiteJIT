@@ -54,7 +54,7 @@ private:
   using FiniFTy = void (*)();
 
   const unsigned MemSize;
-  char *base;
+  char *const base;
   char *text;
   uintptr_t *got;
   AllocatedSecsTy SecMemTmp; // Temporary record {sec_number, allocated_addr}
@@ -133,6 +133,8 @@ public:
   int addElf(int fd);
   int addElf(const char *Path);
   int addC(const char *c);
+
+  void clear();
 
   // The symbol finder is used to find the undefined symbol
   void setSymbolFinder(SymbolFinderTy finder) { SymbolFinder = finder; }

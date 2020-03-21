@@ -354,7 +354,7 @@ std::unique_ptr<LiteJIT> LiteJIT::createLiteJIT(unsigned MemSize,
   return std::unique_ptr<LiteJIT>(new LiteJIT(MemSize, (char *)base));
 }
 
-LiteJIT::~LiteJIT() {
+void LiteJIT::clear() {
   // Run the termination code
   for (auto f : fini)
     f();
@@ -365,6 +365,19 @@ LiteJIT::~LiteJIT() {
     for (const auto &name : HasDeleteEventSymbol)
       DeleteSymbolEvent(name.c_str());
   }
+  text = base;
+  got = (uintptr_t *)(base + MemSize * 1024);
+#if !LITEJIT_DISABLE_LOOKUP
+  SymbolMap.clear();
+#endif
+  GOTSymbolMap.clear();
+  fini.clear();
+  eh_frame.clear();
+  HasDeleteEventSymbol.clear();
+}
+
+LiteJIT::~LiteJIT() {
+  clear();
   munmap(base, MemSize * 1024);
 }
 
